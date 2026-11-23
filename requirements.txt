@@ -1,0 +1,14 @@
+torch>=2.1
+pytorch-lightning>=2.1
+torchmetrics>=1.2
+rotary-embedding-torch>=0.5
+einops
+huggingface_hub
+packaging
+numpy
+soundfile
+natsort
+pyyaml
+tqdm
+tensorboard
+# optional: wandb

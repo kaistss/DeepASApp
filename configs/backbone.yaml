@@ -1,0 +1,148 @@
+# Stage 1: TF-Locoformer backbone (checkpoint not released; train with this config before stage 2)
+
+deterministic: False
+manual_seed: 0
+
+datamodule:
+    module: src.datamodules.datamodule
+    main: DataModule
+    args:
+        train_dataloader:
+            batch_size: 2           # per GPU (4 GPUs -> effective 8)
+            num_workers: 4
+            persistent_workers: false
+            dataset:
+                module: src.datamodules.dataset.asa.asa
+                main: AuditorySceneAnalysisDataset
+                args:
+                    asa_dir: "data/ASA"     # or pass --data_dir
+                    dataset: "train"
+                    sample_rate: 16000
+                    num_speakers: 5
+                    audio_time_len: 4.0
+                    n_classes: 13
+        val_dataloader:
+            batch_size: 2
+            num_workers: 4
+            persistent_workers: false
+            dataset:
+                module: src.datamodules.dataset.asa.asa
+                main: AuditorySceneAnalysisDataset
+                args:
+                    asa_dir: "data/ASA"
+                    dataset: "dev"
+                    sample_rate: 16000
+                    num_speakers: 5
+                    audio_time_len: 4.0
+                    n_classes: 13
+lightning_module:
+    module: src.training.lightningmodule.asa.dual_path_decoder
+    main: DualPathDecoder
+    args:
+        model:
+            module: src.models.tf_locoformer.locoformer_separator
+            main: TFLocoformerSeparator
+            args:
+                num_spk: 5
+                n_layers: 6
+                emb_dim: 64
+                norm_type: "rmsgroupnorm"
+                num_groups: 4
+                tf_order: "ft"
+                n_heads: 4
+                flash_attention: false
+                attention_dim: 64
+                pos_enc: rope
+                ffn_type: ["swiglu_conv1d", "swiglu_conv1d"]
+                ffn_hidden_dim: [128, 128]
+                conv1d_kernel: 4
+                conv1d_shift: 1
+                dropout: 0.0
+                eps: 0.00001
+        loss:
+            module: src.training.loss.asa.asa
+            main: get_loss_func
+        optimizer:
+            module: torch.optim
+            main: AdamW
+            args:
+                params: null        # assigned in BaseLightningModule
+                lr: 0.0004
+                betas: [0.9, 0.999]
+                eps: 0.000001
+                weight_decay: 0.01
+                amsgrad: true
+        lr_scheduler:
+            scheduler:
+                module: src.training.scheduler.warmup_reduce_on_plateau
+                main: WarmupReduceLROnPlateau
+                args:
+                    warmup_epochs: 0     # counted in optimizer steps (interval: step)
+                    max_lr: 0.0004
+                    mode: min
+                    factor: 0.5
+                    patience: 3
+                    min_lr: 0.0001
+            interval: step
+            frequency: 1
+            monitor: epoch_val/loss
+        is_validation: true
+        metric:
+            module: src.training.metric.seld_metrics
+            main: validate
+train:
+    callbacks:
+        -
+            name: checkpoint
+            module: pytorch_lightning.callbacks
+            main: ModelCheckpoint
+            args:
+                every_n_epochs: 1
+                filename: "{epoch}"
+                save_top_k: 3
+                save_last: True
+                monitor: epoch_val/loss
+                mode: min
+                verbose: False
+                dirpath: null       # set to <workspace>/checkpoints by train.py
+        -
+            name: tqdm
+            module: pytorch_lightning.callbacks
+            main: TQDMProgressBar
+            args:
+                refresh_rate: 1
+                process_position: 0
+        -
+            name: early_stopping
+            module: pytorch_lightning.callbacks
+            main: EarlyStopping
+            args:
+                monitor: epoch_val/loss
+                mode: min
+                patience: 10
+                verbose: False
+    trainer:
+        module: pytorch_lightning
+        main: Trainer
+        args:
+            accelerator: auto
+            devices: [0, 1, 2, 3]
+            num_nodes: 1
+            precision: 16
+            logger: null
+            fast_dev_run: False
+            max_epochs: 200
+            log_every_n_steps: 100
+            use_distributed_sampler: True
+            sync_batchnorm: True
+            check_val_every_n_epoch: 1
+            val_check_interval: 1.0
+            num_sanity_val_steps: 1
+            enable_checkpointing: True
+            enable_progress_bar: True
+            enable_model_summary: True
+            limit_train_batches: null
+            limit_val_batches: null
+            accumulate_grad_batches: 1
+            gradient_clip_val: 5
+            gradient_clip_algorithm: norm
