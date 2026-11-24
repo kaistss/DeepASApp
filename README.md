@@ -1,13 +1,18 @@
 # DeepASApp
 
+- **Paper:** [arXiv:2610.30874](https://arxiv.org/abs/2610.30874)
+- **Dataset:** [ASA2 dataset (Hugging Face)](https://huggingface.co/datasets/donghoney22/ASA2_dataset)
+
 Training and evaluation code for multichannel auditory scene analysis (ASA): source separation (anechoic / reverberant / noise), sound event classification and detection (SED), and direction-of-arrival (DOA) estimation in one model.
 
 The model is trained in two stages:
 
-| Stage | Model | Config | Checkpoint |
-|---|---|---|---|
-| 1. Backbone | TF-Locoformer separator with SED/DOA heads | `configs/backbone.yaml` | not released (train with this config) |
-| 2. Proposed | Frozen backbone + object path (`pop`) with intermediate supervision at layers 3 and 4 | `configs/proposed.yaml` | `checkpoints/proposed/epoch=64.ckpt` |
+| Stage | Model | Config |
+|---|---|---|
+| 1. Backbone | TF-Locoformer separator with SED/DOA heads | `configs/backbone.yaml` |
+| 2. Proposed | Frozen backbone + object path (`pop`) with intermediate supervision at layers 3 and 4 | `configs/proposed.yaml` |
+
+> **Pretrained checkpoints will be released later.** Until then, you can train the model with the configs below and evaluate your own checkpoints (see [Evaluation](#evaluation)).
 
 ## Repository structure
 
@@ -16,8 +21,6 @@ The model is trained in two stages:
 ├── configs/
 │   ├── backbone.yaml                 # stage 1
 │   └── proposed.yaml                 # stage 2 (loads the stage-1 checkpoint via `ckpt`)
-├── checkpoints/
-│   └── proposed/epoch=64.ckpt        # released model (frozen backbone weights included)
 └── src/
     ├── train.py                      # training entry point
     ├── evaluate.py                   # evaluation entry point
@@ -42,16 +45,14 @@ The model is trained in two stages:
 ## Installation
 
 ```bash
-conda create -n deepasa python=3.12 -y
+conda create -n deepasa python=3.11 -y
 conda activate deepasa
 pip install -r requirements.txt
 ```
 
-We tested the code with Python 3.12, PyTorch 2.5.1 and PyTorch Lightning 2.5.
-
 ## Dataset
 
-`AuditorySceneAnalysisDataset` expects this layout (16 kHz, 4-channel, 4 s clips, up to 5 sources, 13 classes):
+Download the [ASA2 dataset](https://huggingface.co/datasets/donghoney22/ASA2_dataset). `AuditorySceneAnalysisDataset` expects this layout (16 kHz, 4-channel, 4 s clips, up to 5 sources, 13 classes):
 
 ```
 <asa_dir>/
@@ -76,15 +77,21 @@ python src/train.py -c configs/backbone.yaml -w workspace/backbone --data_dir /p
 python src/train.py -c configs/proposed.yaml -w workspace/proposed --data_dir /path/to/ASA
 ```
 
-Checkpoints, text logs and TensorBoard logs go to `<workspace>/{checkpoints,logs,tf_logs}`. Before stage 2, set `lightning_module.args.model.args.ckpt` in `configs/proposed.yaml` to your stage-1 checkpoint (default: `workspace/backbone/checkpoints/last.ckpt`).
+Checkpoints are saved to `<workspace>/checkpoints/` as `epoch=<N>.ckpt` (top 3 by the validation metric) and `last.ckpt`. Before stage 2, set `lightning_module.args.model.args.ckpt` in `configs/proposed.yaml` to your stage-1 checkpoint (default: `workspace/backbone/checkpoints/last.ckpt`).
 
-Useful options: `--devices 0,1`, `--batch_size 1`, `--resume_last`, `-r <ckpt>`, `--wandb_project <name>` (W&B is off unless you pass this).
+Useful options: `--devices 0,1`, `--batch_size 1`, `--resume_last`, `-r <ckpt>`.
 
 ## Evaluation
 
+Evaluate a checkpoint from your own training run by passing the training config and the checkpoint path:
+
 ```bash
-python src/evaluate.py -c configs/proposed.yaml --ckpt "checkpoints/proposed/epoch=64.ckpt" --data_dir /path/to/ASA
+python src/evaluate.py -c configs/proposed.yaml \
+    --ckpt workspace/proposed/checkpoints/epoch=<N>.ckpt \
+    --data_dir /path/to/ASA
 ```
+
+A stage-1 backbone checkpoint can be evaluated the same way with `-c configs/backbone.yaml`.
 
 The script reads the model and dataset definitions from the training config and evaluates the `test` split (change it with `--split`). For each sample, outputs are aligned to the references by PIT, and then these metrics are computed and averaged over the test set:
 

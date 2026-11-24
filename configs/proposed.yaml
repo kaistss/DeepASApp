@@ -1,4 +1,4 @@
-# Stage 2: proposed object path on top of the frozen backbone (-> checkpoints/proposed/epoch=64.ckpt)
+# Stage 2: proposed object path on top of the frozen backbone
 # Only modules whose name contains 'pop' are trained; the backbone is loaded from `ckpt` and frozen.
 
 deterministic: False
